@@ -26,11 +26,17 @@ const logger = createWinstonLogger("populateContainers")
 const TEST_PAGE_SLUG = "test-page" as FullSlug
 const DESIGN_PAGE_SLUG = "design" as FullSlug
 
+// NEW: Safe file existence check
+const fileExists = (path: string): boolean => {
+  try {
+    return fs.existsSync(path)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Finds an element in the HAST tree by its ID attribute.
- * @param root - The root HAST node to search
- * @param id - The ID to search for
- * @returns The element with the matching ID, or null if not found
  */
 export const findElementById = (root: Root, id: string): Element | null => {
   let found: Element | null = null
@@ -44,9 +50,6 @@ export const findElementById = (root: Root, id: string): Element | null => {
 
 /**
  * Finds all elements in the HAST tree by class name.
- * @param root - The root HAST node to search
- * @param className - The class name to search for
- * @returns Array of elements with the matching class name
  */
 export const findElementsByClass = (root: Root, className: string): Element[] => {
   const found: Element[] = []
@@ -58,23 +61,14 @@ export const findElementsByClass = (root: Root, className: string): Element[] =>
   return found
 }
 
-/**
- * Type for content generators that produce HAST elements to populate containers.
- */
 export type ContentGenerator = () => Promise<Element[]>
 
-/**
- * Generates content from a constant value (string or number).
- */
 export const generateConstantContent = (value: string | number): ContentGenerator => {
   return async (): Promise<Element[]> => {
     return [h("span", String(value))]
   }
 }
 
-/**
- * Generates content showing the count of npm test files (.test.ts and .test.tsx).
- */
 export const generateTestCountContent = (): ContentGenerator => {
   return async (): Promise<Element[]> => {
     const testFiles = await globby("**/*.test.{ts,tsx}", {
@@ -85,9 +79,6 @@ export const generateTestCountContent = (): ContentGenerator => {
   }
 }
 
-/**
- * Adds .png extension to path if it doesn't already have an extension.
- */
 const addPngExtension = (path: string): string => {
   if (path.startsWith("http") || path.includes(".svg") || path.includes(".ico")) {
     return path
@@ -95,9 +86,6 @@ const addPngExtension = (path: string): string => {
   return `${path}.png`
 }
 
-/**
- * Checks CDN for SVG version of PNG paths and caches results.
- */
 const checkCdnSvgs = async (pngPaths: string[]): Promise<void> => {
   await Promise.all(
     pngPaths.map(async (pngPath) => {
@@ -108,15 +96,12 @@ const checkCdnSvgs = async (pngPaths: string[]): Promise<void> => {
           urlCache.set(pngPath, svgUrl)
         }
       } catch {
-        // SVG doesn't exist on CDN, that's fine
+        // ignore
       }
     }),
   )
 }
 
-/**
- * Generates the site's own favicon element.
- */
 export const generateSiteFaviconContent = (): ContentGenerator => {
   return async (): Promise<Element[]> => {
     const faviconElement = createFaviconElement(specialFaviconPaths.turntrout)
@@ -124,15 +109,11 @@ export const generateSiteFaviconContent = (): ContentGenerator => {
   }
 }
 
-/**
- * Generates favicon elements based on favicon counts from the build process.
- */
 export const generateFaviconContent = (): ContentGenerator => {
   return async (): Promise<Element[]> => {
     const faviconCounts = getFaviconCounts()
     logger.info(`Got ${faviconCounts.size} favicon counts for table generation`)
 
-    // Find PNG paths that need SVG CDN checking
     const pngPathsToCheck = Array.from(faviconCounts.keys())
       .map(addPngExtension)
       .map(transformUrl)
@@ -141,7 +122,6 @@ export const generateFaviconContent = (): ContentGenerator => {
 
     await checkCdnSvgs(pngPathsToCheck)
 
-    // Process and filter favicons
     const validFavicons = Array.from(faviconCounts.entries())
       .map(([pathWithoutExt, count]) => {
         const pathWithExt = addPngExtension(pathWithoutExt)
@@ -149,10 +129,8 @@ export const generateFaviconContent = (): ContentGenerator => {
         if (transformedPath === DEFAULT_PATH) return null
 
         const url = getFaviconUrl(transformedPath)
-        // istanbul ignore if
         if (url === DEFAULT_PATH) return null
 
-        // Use helper from linkfavicons.ts to check if favicon should be included
         if (!shouldIncludeFavicon(url, pathWithoutExt, faviconCounts)) return null
 
         return { url, count } as const
@@ -162,7 +140,6 @@ export const generateFaviconContent = (): ContentGenerator => {
 
     logger.info(`After filtering, ${validFavicons.length} valid favicons for table`)
 
-    // Create table
     const tableRows: Element[] = [
       h("tr", [h("th", "Lowercase"), h("th", "Punctuation"), h("th", "Exclamation")]),
     ]
@@ -182,24 +159,12 @@ export const generateFaviconContent = (): ContentGenerator => {
   }
 }
 
-/**
- * Configuration for populating an element by ID or class with generated content.
- */
 export interface ElementPopulatorConfig {
-  /** The ID of the element to populate (mutually exclusive with className) */
   id?: string
-  /** The class name of elements to populate (mutually exclusive with id) */
   className?: string
-  /** The content generator function */
   generator: ContentGenerator
 }
 
-/**
- * Populates elements in an HTML file based on a list of configurations.
- * @param htmlPath - Path to the HTML file
- * @param configs - Array of element populator configurations
- * @returns Array of file paths that were modified
- */
 export const populateElements = async (
   htmlPath: string,
   configs: ElementPopulatorConfig[],
@@ -209,7 +174,6 @@ export const populateElements = async (
   let modified = false
 
   for (const config of configs) {
-    // Validate that config has exactly one of id or className
     if (config.id && config.className) {
       throw new Error("Config cannot have both id and className")
     }
@@ -252,36 +216,39 @@ export const populateElements = async (
 }
 
 /**
- * Emitter that populates the containers on the test page after all files have been processed.
+ * Emitter that populates containers on test & design pages.
  */
 export const PopulateContainers: QuartzEmitterPlugin = () => {
   return {
     name: "PopulateContainers",
-    // istanbul ignore next
     getQuartzComponents() {
       return []
     },
     async emit(ctx) {
       const testPagePath = joinSegments(ctx.argv.output, `${TEST_PAGE_SLUG}.html`)
-
-      const testPageFiles = await populateElements(testPagePath, [
-        {
-          id: "populate-favicon-container",
-          generator: generateFaviconContent(),
-        },
-      ])
-
       const designPagePath = joinSegments(ctx.argv.output, `${DESIGN_PAGE_SLUG}.html`)
-      const designPageFiles = await populateElements(designPagePath, [
-        {
-          className: "populate-site-favicon",
-          generator: generateSiteFaviconContent(),
-        },
-        {
-          id: "populate-favicon-threshold",
-          generator: generateConstantContent(minFaviconCount),
-        },
-      ])
+
+      const testPageFiles = fileExists(testPagePath)
+        ? await populateElements(testPagePath, [
+            {
+              id: "populate-favicon-container",
+              generator: generateFaviconContent(),
+            },
+          ])
+        : []
+
+      const designPageFiles = fileExists(designPagePath)
+        ? await populateElements(designPagePath, [
+            {
+              className: "populate-site-favicon",
+              generator: generateSiteFaviconContent(),
+            },
+            {
+              id: "populate-favicon-threshold",
+              generator: generateConstantContent(minFaviconCount),
+            },
+          ])
+        : []
 
       return [...testPageFiles, ...designPageFiles]
     },
