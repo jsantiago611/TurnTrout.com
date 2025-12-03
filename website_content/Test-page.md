@@ -7,8 +7,6 @@ tags:
 description: Displaying the features of the website for use in visual regression testing.
 authors: Alex Turner
 hideSubscriptionLinks: false
-card_image:
-aliases:
 date_published: 2024-12-04 22:12:56.910555
 date_updated: 2025-11-22 00:21:52.667251
 ---
