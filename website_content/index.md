@@ -1,7 +1,7 @@
 ---
 permalink: welcome
 hide_metadata: "true"
-title: The Pond
+title: Oscar the Zettelkasten
 hide_title: "true"
 aliases:
   - index
