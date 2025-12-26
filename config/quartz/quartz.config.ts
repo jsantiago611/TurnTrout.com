@@ -37,7 +37,7 @@ import {
 
 const config: QuartzConfig = {
   configuration: {
-    pageTitle: "The Pond",
+    pageTitle: "Oscar the Zettelkasten",
     enablePopovers: true,
     analytics: null,
 
