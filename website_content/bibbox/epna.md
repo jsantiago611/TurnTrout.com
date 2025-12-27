@@ -2,9 +2,9 @@
 hide_authors: "true"
 hide_metadata: "true"
 no_dropcap: "false"
-title: The expulsive part of a new affection
+title: The expulsive power of a new affection
 aliases:
-  - Posts
+  - EPNA
 hideSubscriptionLinks: true
 card_image: "[REDACTED_URL_1]/static/images/card_images/test_library.png"
 description: A selection of the best posts which I've written.
